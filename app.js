@@ -1,170 +1,272 @@
-<!-- --- file: app.js --- -->
-<script>
-// ユーティリティ
-const $ = (sel) => document.querySelector(sel);
-const $$ = (sel) => Array.from(document.querySelectorAll(sel));
-const toast = (msg) => { const t = $('#toast'); t.textContent = msg; t.classList.remove('hidden'); setTimeout(()=>t.classList.add('hidden'), 1800); };
-const uuid = () => (crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2));
+import { addCafe, updateCafe, deleteCafe, getCafe, listCafes, exportJSON, importJSON, normalizeTags } from './db.js';
 
-// ルーター（#/ , #/add , #/c/:id）
-window.addEventListener('hashchange', renderRoute);
-window.addEventListener('load', () => { renderRoute(); bindUI(); renderList(); });
+const $ = (sel, el=document) => el.querySelector(sel);
+const $$ = (sel, el=document) => [...el.querySelectorAll(sel)];
 
-function route() {
-  const h = location.hash || '#/';
-  if (h.startsWith('#/c/')) return { name:'detail', id: h.split('/')[2] };
-  if (h.startsWith('#/add')) return { name:'add' };
-  return { name:'list' };
-}
+let deferredPrompt = null;
 
-function show(name) {
-  $$('.page').forEach(p => p.classList.add('hidden'));
-  $(`[data-route="${name}"]`).classList.remove('hidden');
-}
-
-async function renderRoute() {
-  const r = route();
-  if (r.name === 'list') { show('list'); await renderList(); }
-  if (r.name === 'add') { show('add'); }
-  if (r.name === 'detail') { show('detail'); await renderDetail(r.id); }
-}
-
-// 一覧のフィルタ & レンダリング
-['#f-keyword','#f-area','#f-tag','#f-fav'].forEach(id => {
-  document.addEventListener('input', (e)=>{ if (e.target.matches(id)) renderList(); });
-  document.addEventListener('change', (e)=>{ if (e.target.matches(id)) renderList(); });
+// PWA install prompt
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  deferredPrompt = e;
+  const btn = document.getElementById('btn-install');
+  if (btn) btn.hidden = false;
+});
+document.addEventListener('click', async (e) => {
+  const t = e.target;
+  if (t?.id === 'btn-install' && deferredPrompt) {
+    deferredPrompt.prompt();
+    await deferredPrompt.userChoice;
+    deferredPrompt = null;
+    t.hidden = true;
+  }
 });
 
-async function renderList() {
-  const listEl = $('#list');
-  const items = await dbAll();
-  // フィルタ
-  const kw = $('#f-keyword').value.trim().toLowerCase();
-  const area = $('#f-area').value;
-  const tag = $('#f-tag').value.trim();
-  const fav = $('#f-fav').checked;
-
-  const filtered = items.filter(c => {
-    if (area && c.area !== area) return false;
-    if (fav && !c.favorite) return false;
-    if (tag && !(c.tags||[]).some(t => t.includes(tag))) return false;
-    if (kw) {
-      const text = [c.name, c.address, (c.tags||[]).join(',')].join(' ').toLowerCase();
-      if (!text.includes(kw)) return false;
-    }
-    return true;
-  }).sort((a,b)=> (b.created_at||'').localeCompare(a.created_at||''));
-
-  // areaグループ
-  const groups = filtered.reduce((acc, c) => { const k = c.area || '未設定'; (acc[k] ||= []).push(c); return acc; }, {});
-  const areas = Object.keys(groups).sort();
-
-  listEl.innerHTML = '';
-  areas.forEach(a => {
-    const sec = document.createElement('section');
-    sec.innerHTML = `<div class="section-title">${a}（${groups[a].length}）</div>`;
-    groups[a].forEach(c => sec.appendChild(renderItem(c)));
-    listEl.appendChild(sec);
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js').catch(console.error);
   });
 }
 
-function renderItem(c) {
-  const el = document.createElement('div');
-  el.className = 'item';
-  el.innerHTML = `
-    <div>
-      <h3>${c.name} ${c.favorite ? '★' : ''}</h3>
-      <div class="sub">${c.address || ''}</div>
-      <div class="sub">${(c.tags||[]).length? 'タグ: '+c.tags.join(', '): ''}</div>
-      ${c.map_url ? `<a href="${c.map_url}" target="_blank">Google Map</a>`: ''}
+// Simple hash router
+window.addEventListener('hashchange', render);
+window.addEventListener('load', render);
+document.addEventListener('click', (e) => {
+  const t = e.target.closest('[data-link]');
+  if (t) {
+    location.hash = t.getAttribute('data-link');
+  }
+});
+
+// Export / Import
+document.addEventListener('DOMContentLoaded', () => {
+  $('#btn-export')?.addEventListener('click', async () => {
+    const text = await exportJSON();
+    const blob = new Blob([text], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = Object.assign(document.createElement('a'), { href:url, download:'cafememo-export.json' });
+    document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+  });
+  $('#import-file')?.addEventListener('change', async (ev) => {
+    const file = ev.target.files?.[0];
+    if (!file) return;
+    const text = await file.text();
+    try{
+      await importJSON(text);
+      alert('インポートしました');
+      render();
+    }catch(err){
+      alert('インポート失敗: ' + err.message);
+    }finally{
+      ev.target.value = '';
+    }
+  });
+});
+
+async function render() {
+  const hash = location.hash || '#/';
+  if (hash.startsWith('#/add')) return renderAdd();
+  if (hash.startsWith('#/c')) return renderDetail(hash.split('/')[2]); // #/c/{id}
+  return renderList();
+}
+
+function tplFilters({areas, current}) {
+  return `
+  <div class="controls">
+    <input class="input" id="q" placeholder="キーワード（店名/住所/タグ/メモ）"/>
+    <select class="select" id="area">
+      <option value="">すべてのエリア</option>
+      ${areas.map(a=>`<option value="${e(a)}">${e(a)}</option>`).join('')}
+    </select>
+    <input class="input" id="tag" placeholder="タグ（カンマ可）"/>
+    <label class="inline"><input type="checkbox" id="favOnly"/> <span>★お気に入りのみ</span></label>
+    <button class="btn" id="btn-clear">クリア</button>
+  </div>`;
+}
+
+async function renderList() {
+  const app = document.getElementById('app');
+  const rows = (await listCafes()).sort((a,b)=> (a.area||'').localeCompare(b.area||'') || b.updated_at.localeCompare(a.updated_at));
+  const areas = [...new Set(rows.map(r=>r.area || 'その他'))].sort();
+
+  app.innerHTML = `
+    <section class="card">
+      <h2 style="margin:0 0 8px">マイカフェ一覧</h2>
+      ${tplFilters({areas})}
+      <div id="list" class="list"></div>
+      ${rows.length===0 ? `<div class="empty">まだ登録がありません。右上の「新規追加」からどうぞ。</div>` : ``}
+    </section>
+  `;
+
+  // set handlers
+  $('#btn-clear').addEventListener('click', () => {
+    $('#q').value=''; $('#area').value=''; $('#tag').value=''; $('#favOnly').checked=false; paint(rows);
+  });
+  $('#q').addEventListener('input', () => paint(rows));
+  $('#area').addEventListener('change', () => paint(rows));
+  $('#tag').addEventListener('input', () => paint(rows));
+  $('#favOnly').addEventListener('change', () => paint(rows));
+
+  paint(rows);
+}
+
+function applyFilters(rows) {
+  const q = $('#q')?.value.trim().toLowerCase() || '';
+  const area = $('#area')?.value || '';
+  const tags = normalizeTags($('#tag')?.value || '');
+  const favOnly = $('#favOnly')?.checked || false;
+
+  return rows.filter(r => {
+    if (area && r.area !== area) return false;
+    if (favOnly && !r.favorite) return false;
+    if (tags.length && !tags.every(t => (r.tags||[]).includes(t))) return false;
+    if (q) {
+      const hay = [r.name, r.address, r.area, (r.tags||[]).join(','), r.memo].join(' ').toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  });
+}
+
+function groupByArea(rows) {
+  const map = new Map();
+  rows.forEach(r=>{
+    const k = r.area || 'その他';
+    if (!map.has(k)) map.set(k, []);
+    map.get(k).push(r);
+  });
+  return [...map.entries()].sort((a,b)=> a[0].localeCompare(b[0]));
+}
+
+function paint(rows) {
+  const filtered = applyFilters(rows);
+  const groups = groupByArea(filtered);
+  const list = document.getElementById('list');
+  list.innerHTML = groups.map(([area, items]) => `
+    <div class="group">
+      <div class="group-title">${e(area)} <span class="badge">${items.length}</span></div>
+      ${items.map(itemCard).join('')}
     </div>
+  `).join('') || `<div class="empty">条件に一致する結果はありません。</div>`;
+
+  // wire actions
+  $$('.item [data-act="fav"]').forEach(btn=>{
+    btn.addEventListener('click', async () => {
+      const id = btn.dataset.id;
+      const on = btn.getAttribute('aria-pressed') === 'true';
+      const next = await updateCafe(id, { favorite: !on });
+      btn.setAttribute('aria-pressed', String(next.favorite));
+      btn.classList.toggle('on', next.favorite);
+      btn.textContent = next.favorite ? '★' : '☆';
+    });
+  });
+}
+
+function itemCard(r){
+  const t = (r.tags||[]).map(x=>`<span class="tag">${e(x)}</span>`).join(' ');
+  const fav = r.favorite ? '★' : '☆';
+  return `
+  <div class="item">
     <div>
-      <button class="btn" onclick="location.hash='#/c/${c.id}'">詳細</button>
-    </div>`;
-  return el;
+      <h3><a class="link" href="#/c/${e(r.id)}">${e(r.name || '(無題)')}</a></h3>
+      <div class="meta">${e(r.area || 'その他')} ・ ${e(r.address || '')}</div>
+      <div class="meta">${t || ''}</div>
+    </div>
+    <div class="item-actions">
+      <button class="star ${r.favorite?'on':''}" data-act="fav" data-id="${e(r.id)}" aria-pressed="${r.favorite?'true':'false'}">${fav}</button>
+      <a class="btn" href="${e(r.map_url || '#')}" target="_blank" rel="noopener">地図</a>
+      <a class="btn" href="#/c/${e(r.id)}">開く</a>
+    </div>
+  </div>`;
 }
 
-// 追加
-function bindUI() {
-  $('#btn-save').addEventListener('click', onSave);
-  $('#btn-export').addEventListener('click', onExport);
-  $('#btn-wipe').addEventListener('click', async ()=>{ if(confirm('端末内の全データを削除しますか？')) { await dbClear(); toast('削除しました'); renderList(); }});
-  $('#file-import').addEventListener('change', onImport);
+function renderAdd() {
+  const app = document.getElementById('app');
+  app.innerHTML = `
+    <section class="card">
+      <h2 style="margin:0 0 8px">カフェを追加</h2>
+      <div class="grid cols-2">
+        <div>
+          <div class="label">店名</div>
+          <input class="input" id="name" placeholder="例）カフェ・ド・〇〇" />
+        </div>
+        <div>
+          <div class="label">エリア</div>
+          <input class="input" id="area" placeholder="例）天神/大名/博多 など" />
+        </div>
+        <div>
+          <div class="label">住所</div>
+          <input class="input" id="address" placeholder="住所（任意）" />
+        </div>
+        <div>
+          <div class="label">GoogleマップURL</div>
+          <input class="input" id="map_url" placeholder="https://maps.app.goo.gl/..." />
+        </div>
+        <div>
+          <div class="label">タグ（カンマ区切り）</div>
+          <input class="input" id="tags" placeholder="電源, 自家焙煎, テラス" />
+        </div>
+        <div class="grid cols-2">
+          <div>
+            <div class="label">評価</div>
+            <input class="input" id="rating" type="number" min="0" max="5" step="1" placeholder="0〜5"/>
+          </div>
+          <div>
+            <div class="label">価格帯</div>
+            <select class="select" id="price_range">
+              <option value="">未設定</option>
+              <option value="¥">¥</option>
+              <option value="¥¥">¥¥</option>
+              <option value="¥¥¥">¥¥¥</option>
+            </select>
+          </div>
+        </div>
+        <div class="kv">
+          <label class="inline"><input type="checkbox" id="favorite"/> <span>★お気に入り</span></label>
+        </div>
+        <div class="grid" style="grid-column:1/-1">
+          <div class="label">メモ</div>
+          <textarea class="textarea" id="memo" rows="4" placeholder="雰囲気、Wi-Fi、混雑具合など"></textarea>
+        </div>
+      </div>
+      <hr class="sep"/>
+      <div class="inline">
+        <button class="btn primary" id="save">保存</button>
+        <a class="btn" data-link="#/">戻る</a>
+      </div>
+    </section>
+  `;
+
+  $('#save').addEventListener('click', async () => {
+    const input = {
+      name: $('#name').value,
+      area: $('#area').value,
+      address: $('#address').value,
+      map_url: $('#map_url').value,
+      tags: $('#tags').value,
+      rating: $('#rating').value,
+      price_range: $('#price_range').value,
+      memo: $('#memo').value,
+      favorite: $('#favorite').checked
+    };
+    if (!input.name) { alert('店名を入力してください'); return; }
+    const rec = await addCafe(input);
+    location.hash = `#/c/${rec.id}`;
+  });
 }
 
-async function onSave() {
-  const name = $('#add-name').value.trim();
-  if (!name) return toast('店名は必須です');
-  const cafe = {
-    id: uuid(),
-    name,
-    area: $('#add-area').value || null,
-    map_url: $('#add-map').value || null,
-    address: $('#add-address').value || null,
-    tags: ($('#add-tags').value || '').split(',').map(s=>s.trim()).filter(Boolean),
-    rating: Number($('#add-rating').value || 0) || null,
-    price_range: $('#add-price').value || null,
-    memo: $('#add-memo').value || null,
-    favorite: $('#add-fav').checked,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString()
-  };
-  await dbAdd(cafe);
-  toast('保存しました');
-  location.hash = '#/';
-}
-
-// 詳細ページ
 async function renderDetail(id) {
-  const c = await dbGet(id);
-  const box = $('#detail-card');
-  if (!c) { box.innerHTML = '<p>見つかりませんでした</p>'; return; }
-  box.innerHTML = `
-    <div class="row center-y" style="justify-content: space-between;">
-      <div>
-        <h2 style="margin:0;">${c.name}</h2>
-        <div class="sub">${c.address || ''}</div>
-        ${c.map_url ? `<a href="${c.map_url}" target="_blank">Google Map</a>`: ''}
-      </div>
-      <div class="row gap">
-        <button class="btn" id="btn-fav">${c.favorite? '★ お気に入り':'☆ お気に入り'}</button>
-        <button class="btn" id="btn-del">削除</button>
-      </div>
-    </div>
-    <div class="grid form" style="margin-top:12px;">
-      <label class="col-span-2">メモ<textarea id="d-memo" class="input" rows="8">${c.memo||''}</textarea></label>
-      <label>タグ（カンマ区切り）<input id="d-tags" class="input" value="${(c.tags||[]).join(', ')}" /></label>
-      <label>評価（0〜5）<input id="d-rating" type="number" min="0" max="5" class="input" value="${c.rating||''}" /></label>
-      <div class="row gap">
-        <button class="btn primary" id="btn-save-detail">保存</button>
-        <button class="btn" onclick="history.back()">戻る</button>
-      </div>
-    </div>`;
-
-  $('#btn-fav').onclick = async ()=>{ c.favorite = !c.favorite; c.updated_at = new Date().toISOString(); await dbPut(c); toast('更新しました'); renderDetail(id); };
-  $('#btn-del').onclick = async ()=>{ if(confirm('削除しますか？')) { await dbDelete(c.id); toast('削除しました'); location.hash = '#/'; } };
-  $('#btn-save-detail').onclick = async ()=>{
-    c.memo = $('#d-memo').value; c.tags = $('#d-tags').value.split(',').map(s=>s.trim()).filter(Boolean); c.rating = Number($('#d-rating').value||0) || null; c.updated_at = new Date().toISOString();
-    await dbPut(c); toast('保存しました'); renderDetail(id);
-  };
-}
-
-// エクスポート/インポート
-async function onExport() {
-  const data = await dbAll();
-  const blob = new Blob([JSON.stringify({ cafes: data }, null, 2)], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a'); a.href = url; a.download = 'cafememo_export.json'; a.click(); URL.revokeObjectURL(url);
-}
-async function onImport(e) {
-  const file = e.target.files[0]; if (!file) return;
-  const text = await file.text();
-  try {
-    const json = JSON.parse(text);
-    if (!json.cafes || !Array.isArray(json.cafes)) throw new Error('形式が不正');
-    for (const c of json.cafes) { if (!c.id) c.id = uuid(); await dbPut(c); }
-    toast('インポート完了'); renderList();
-  } catch(err) { alert('読み込みに失敗しました: ' + err.message); }
-  e.target.value = '';
-}
-</script>
+  const r = await getCafe(id);
+  const app = document.getElementById('app');
+  if (!r) {
+    app.innerHTML = `<section class="card"><div class="empty">見つかりませんでした。<a class="link" href="#/">一覧へ</a></div></section>`;
+    return;
+  }
+  const tagStr = (r.tags||[]).join(', ');
+  app.innerHTML = `
+    <section class="card">
+      <div class="inline" style="justify-content:space-between">
+        <h2 style="margin:0">${e(r.name||'(無題)')}</h2>
+        <div class="inline">
+          <button class="star ${r.favorite?'on':''}" id="fav">${r.favorite?'★':'☆'}</button>
+          <a class="btn" href="${e(r.map
