@@ -1,0 +1,133 @@
+<!--
+CafeMemo — 超シンプル PWA（HTML/CSS/JSのみ）
+- オフライン対応（Service Worker）
+- IndexedDBに保存（端末内に永続化）
+- 画面：一覧 / 追加 / 詳細
+- 機能：エリア別リスト、タグ/★/キーワードフィルタ、JSONエクスポート/インポート
+- GitHub Pagesにそのまま置いて動きます
+
+フォルダ構成（推奨）
+/cafememo-pwa/
+  index.html
+  styles.css
+  app.js
+  db.js
+  sw.js
+  manifest.webmanifest
+  /icons/icon.svg  （※PNGでもOK。最低 192, 512 を用意すると良い）
+-->
+
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>CafeMemo PWA</title>
+  <link rel="manifest" href="manifest.webmanifest" />
+  <meta name="theme-color" content="#1d4ed8" />
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="container row">
+      <h1 class="brand" onclick="location.hash='#/'">☕ CafeMemo</h1>
+      <nav class="row gap">
+        <button id="btn-add" class="btn primary" onclick="location.hash='#/add'">新規追加</button>
+        <button id="btn-install" class="btn">インストール</button>
+        <div class="dropdown">
+          <button class="btn">データ</button>
+          <div class="menu">
+            <button class="menu-item" id="btn-export">エクスポート(JSON)</button>
+            <label class="menu-item">
+              インポート(JSON)
+              <input id="file-import" type="file" accept="application/json" hidden />
+            </label>
+            <button class="menu-item danger" id="btn-wipe">全削除（端末内）</button>
+          </div>
+        </div>
+      </nav>
+    </div>
+  </header>
+
+  <main class="container" id="app">
+    <!-- 一覧ページ -->
+    <section data-route="list" class="page">
+      <div class="card">
+        <div class="grid filters">
+          <input id="f-keyword" class="input" placeholder="キーワード（店名・住所・タグ）" />
+          <select id="f-area" class="input">
+            <option value="">エリア（すべて）</option>
+            <option>天神</option><option>大名</option><option>薬院</option><option>博多</option><option>その他</option>
+          </select>
+          <input id="f-tag" class="input" placeholder="タグ（例：電源）" />
+          <label class="row center-y gap-sm">
+            <input id="f-fav" type="checkbox" /> お気に入りのみ
+          </label>
+        </div>
+      </div>
+      <div id="list" class="space"></div>
+    </section>
+
+    <!-- 追加ページ -->
+    <section data-route="add" class="page hidden">
+      <div class="card">
+        <h2>カフェを追加</h2>
+        <div class="grid form">
+          <label>店名 *<input id="add-name" class="input" /></label>
+          <label>エリア
+            <select id="add-area" class="input">
+              <option value="">未選択</option><option>天神</option><option>大名</option><option>薬院</option><option>博多</option><option>その他</option>
+            </select>
+          </label>
+          <label>Google Mapsリンク<input id="add-map" class="input" placeholder="https://maps.app.goo.gl/..." /></label>
+          <label>住所<input id="add-address" class="input" /></label>
+          <label class="col-span-2">タグ（カンマ区切り）<input id="add-tags" class="input" placeholder="電源, Wi-Fi, 平日静か" /></label>
+          <label>評価（0〜5）<input id="add-rating" type="number" min="0" max="5" class="input" /></label>
+          <label>価格帯
+            <select id="add-price" class="input"><option value="">未選択</option><option>¥</option><option>¥¥</option><option>¥¥¥</option></select>
+          </label>
+          <label class="col-span-2">メモ<textarea id="add-memo" class="input" rows="5"></textarea></label>
+          <label class="row center-y gap-sm"><input id="add-fav" type="checkbox" /> お気に入り</label>
+          <div class="row gap">
+            <button class="btn primary" id="btn-save">保存</button>
+            <button class="btn" onclick="history.back()">戻る</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 詳細ページ -->
+    <section data-route="detail" class="page hidden">
+      <div class="card" id="detail-card">
+        <!-- JSで中身を描画 -->
+      </div>
+    </section>
+  </main>
+
+  <footer class="container footer">オフラインでも使えます · PWA</footer>
+
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="db.js"></script>
+  <script src="app.js"></script>
+  <script>
+    // PWA: Service Worker登録 & インストールボタン
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js'));
+    }
+    let deferredPrompt;
+    const btnInstall = document.getElementById('btn-install');
+    window.addEventListener('beforeinstallprompt', (e) => {
+      e.preventDefault();
+      deferredPrompt = e;
+      btnInstall.classList.add('show');
+    });
+    btnInstall.addEventListener('click', async () => {
+      if (!deferredPrompt) return;
+      deferredPrompt.prompt();
+      await deferredPrompt.userChoice; deferredPrompt = null; btnInstall.classList.remove('show');
+    });
+  </script>
+</body>
+</html>
