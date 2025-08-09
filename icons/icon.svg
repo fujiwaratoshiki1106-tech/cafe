@@ -1,0 +1,15 @@
+<!-- --- file: icons/icon.svg --- -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <defs>
+    <linearGradient id="g" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0" stop-color="#3b82f6"/>
+      <stop offset="1" stop-color="#1d4ed8"/>
+    </linearGradient>
+  </defs>
+  <rect width="128" height="128" rx="24" fill="url(#g)"/>
+  <g transform="translate(16,20)" fill="#fff">
+    <path d="M20 68h56a12 12 0 0 0 12-12V36h4a12 12 0 0 1 0 24h-4v4a20 20 0 0 1-20 20H24a12 12 0 1 1 0-24h4v8z" opacity=".2"/>
+    <path d="M24 64h40a16 16 0 0 0 16-16V24H24a12 12 0 1 0 0 24h4v16z"/>
+    <circle cx="72" cy="24" r="6"/>
+  </g>
+</svg>
