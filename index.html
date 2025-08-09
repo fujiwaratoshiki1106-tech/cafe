@@ -13,15 +13,27 @@
   <header class="header">
     <h1 class="app-title">☕︎ CafeMemo</h1>
     <nav class="nav">
-      <button id="btn-home" class="btn ghost" data-link="#/">ホーム</button>
-      <button id="btn-add" class="btn primary" data-link="#/add">新規追加</button>
       <button id="btn-install" class="btn" hidden>インストール</button>
     </nav>
   </header>
 
-  <main id="app" class="container">
-    <!-- ルーティングで app.js が差し替え -->
-    <noscript>このアプリはJavaScriptが必要です。</noscript>
+  <main class="container">
+    <!-- タブ -->
+    <section class="card">
+      <div class="tabs">
+        <button class="tab active" data-tab="add">新規追加</button>
+        <button class="tab" data-tab="edit">編集</button>
+        <button class="tab" data-tab="delete">削除</button>
+      </div>
+      <div id="tab-contents"></div>
+    </section>
+
+    <!-- 一覧（参考・常時表示）-->
+    <section class="card" style="margin-top:16px">
+      <h2 style="margin:0 0 8px">登録一覧</h2>
+      <div id="list" class="list"></div>
+      <div class="empty" id="empty" hidden>まだ登録がありません。</div>
+    </section>
   </main>
 
   <footer class="footer">
