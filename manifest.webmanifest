@@ -1,5 +1,3 @@
-<!-- --- file: manifest.webmanifest --- -->
-<script type="application/manifest+json">
 {
   "name": "CafeMemo PWA",
   "short_name": "CafeMemo",
@@ -9,7 +7,11 @@
   "background_color": "#ffffff",
   "theme_color": "#1d4ed8",
   "icons": [
-    { "src": "icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+    {
+      "src": "icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
   ]
 }
-</script>
