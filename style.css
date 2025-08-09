@@ -1,0 +1,42 @@
+<!-- --- file: styles.css --- -->
+<style>
+:root { --bg:#f6f7fb; --card:#fff; --ink:#0f172a; --muted:#64748b; --brand:#1d4ed8; --border:#e5e7eb; }
+* { box-sizing: border-box; }
+html,body { height:100%; }
+body { margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, "Hiragino Kaku Gothic ProN", Meiryo, sans-serif; color:var(--ink); background:var(--bg); }
+.container { max-width: 1024px; margin: 0 auto; padding: 0 16px; }
+.topbar { position: sticky; top:0; z-index: 10; background: rgba(255,255,255,.8); backdrop-filter: blur(8px); border-bottom:1px solid var(--border); }
+.brand { font-size: 18px; font-weight: 700; cursor: pointer; }
+.row { display:flex; gap:12px; }
+.center-y { align-items:center; }
+.gap { gap:12px; }
+.gap-sm { gap:8px; }
+.card { background:var(--card); border:1px solid var(--border); border-radius:16px; padding:16px; box-shadow: 0 1px 2px rgba(0,0,0,.03); }
+.page { padding: 16px 0 24px; }
+.hidden { display:none; }
+.space { display:grid; gap:12px; }
+.grid { display:grid; gap:12px; grid-template-columns: repeat(2, minmax(0,1fr)); }
+@media (min-width: 900px) { .grid { grid-template-columns: repeat(4, minmax(0,1fr)); } }
+.filters { align-items: center; }
+.form { grid-template-columns: repeat(2, minmax(0,1fr)); }
+.col-span-2 { grid-column: span 2; }
+.input { width:100%; padding:10px 12px; border:1px solid var(--border); border-radius:12px; background:#fff; }
+.btn { padding:8px 12px; border-radius:12px; border:1px solid var(--border); background:#fff; cursor:pointer; }
+.btn.primary { background: var(--brand); color:#fff; border-color: transparent; }
+.btn:disabled { opacity:.6; cursor: not-allowed; }
+.dropdown { position: relative; }
+.dropdown .menu { position:absolute; right:0; top:calc(100% + 8px); background:#fff; border:1px solid var(--border); border-radius:12px; min-width: 200px; padding:6px; display:none; }
+.dropdown:hover .menu { display:block; }
+.menu-item { display:block; width:100%; text-align:left; padding:8px 10px; border-radius:8px; background:#fff; border:none; cursor:pointer; }
+.menu-item:hover { background:#f1f5f9; }
+.menu-item.danger { color:#b91c1c; }
+.section-title { font-weight:700; margin: 12px 0 4px; }
+.item { display:flex; gap:12px; justify-content: space-between; align-items: start; padding:12px; border:1px solid var(--border); border-radius:12px; background:#fff; }
+.item h3 { margin:0; font-size: 16px; }
+.item .sub { color:var(--muted); font-size: 13px; }
+.item a { color: var(--brand); }
+.footer { color:var(--muted); font-size: 12px; padding: 16px; }
+.toast { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); background:#111827; color:#fff; padding:10px 14px; border-radius:12px; font-size: 13px; box-shadow:0 6px 24px rgba(0,0,0,.2); }
+#btn-install { display:none; }
+#btn-install.show { display:inline-block; }
+</style>
